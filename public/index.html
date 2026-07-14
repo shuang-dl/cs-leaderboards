@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CS Leaderboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Customer Support Leaderboard</h1>
+
+    <div class="controls">
+      <label>
+        Start date
+        <input type="date" id="start-date" />
+      </label>
+      <label>
+        End date
+        <input type="date" id="end-date" />
+      </label>
+      <button id="generate-btn">Generate Leaderboard</button>
+    </div>
+
+    <p id="status"></p>
+
+    <table id="leaderboard-table" hidden>
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th>Closed Conversations</th>
+          <th>CSAT Requested</th>
+          <th>CSAT Received</th>
+          <th>Response Rate</th>
+          <th>Avg CSAT</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
