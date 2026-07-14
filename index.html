@@ -117,6 +117,19 @@ async function intercomGet(path) {
   return res.json();
 }
 
+// fetch() to one of our own routes, but fail with a readable message if the
+// response isn't JSON (e.g. a platform/proxy error page intercepted the request
+// before it reached the app).
+async function fetchJSON(url, options) {
+  const res = await fetch(url, options);
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    throw new Error(`Non-JSON response (status ${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
 async function loadAdmins() {
   const data = await intercomGet('/admins');
   for (const a of data.admins || []) state.admins.set(String(a.id), a.name || a.email || `Admin ${a.id}`);
@@ -199,8 +212,7 @@ async function syncFromIntercom() {
 
   try {
     setSyncStatus(`Syncing ${start} to ${end} from Intercom…`);
-    const res = await fetch(`/sync-conversations?start=${start}&end=${end}`, { method: 'POST' });
-    const data = await res.json();
+    const data = await fetchJSON(`/sync-conversations?start=${start}&end=${end}`, { method: 'POST' });
     if (data.error) throw new Error(data.error);
     setSyncStatus(`Synced ${data.synced} conversation(s) (${data.fetched} fetched, ${data.skipped} skipped — no closing admin).`);
   } catch (err) {
@@ -224,8 +236,7 @@ async function runReport() {
 
     setStatus('Reading leaderboard from the database…');
     const qs = new URLSearchParams({ start, end, ...(teamId ? { team: teamId } : {}) });
-    const res = await fetch(`/leaderboard-data?${qs}`);
-    const data = await res.json();
+    const data = await fetchJSON(`/leaderboard-data?${qs}`);
     if (data.error) throw new Error(data.error);
 
     const agents = data.agents.map(a => ({
