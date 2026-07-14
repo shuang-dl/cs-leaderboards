@@ -39,8 +39,8 @@ async function generateLeaderboard() {
 
     const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || "Request failed");
+    if (data.error) {
+      throw new Error(data.error);
     }
 
     tbody.innerHTML = "";
