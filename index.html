@@ -1,0 +1,310 @@
+<meta charset="UTF-8">
+<title>CS Leaderboard</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2e38; --text: #e6e8ee;
+    --muted: #8b93a3; --accent: #5b8cff; --good: #3fbf7f; --warn: #e0a83e; --bad: #e0554e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 4px; font-size: 18px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main { padding: 24px 28px; max-width: 1000px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type="date"], select { background: #0f1115; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+  button { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  #status.err { color: var(--bad); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .card { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card .num { font-size: 26px; font-weight: 700; }
+  .card .label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  th.num, td.num { text-align: right; }
+  .empty { color: var(--muted); font-style: italic; padding: 20px 0; text-align: center; }
+</style>
+
+<header>
+  <h1>Customer Support Leaderboard</h1>
+  <p>Pulls directly from the Intercom API through the local proxy. No AI processing in this data path — everything below runs in your browser.</p>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Filters</h2>
+    <div class="row">
+      <div class="field">
+        <label>Team</label>
+        <select id="teamSelect"><option value="">Loading teams…</option></select>
+      </div>
+      <div class="field">
+        <label>From</label>
+        <input type="date" id="startDate">
+      </div>
+      <div class="field">
+        <label>To</label>
+        <input type="date" id="endDate">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button id="runBtn" disabled>Generate Leaderboard</button>
+      </div>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel" id="summaryPanel" style="display:none;">
+    <h2>Summary</h2>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <div class="panel" id="tablePanel" style="display:none;">
+    <h2>By teammate</h2>
+    <div style="overflow-x:auto;">
+      <table id="leaderboardTable">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th class="num">Closed Conversations</th>
+            <th class="num">CSAT Requested</th>
+            <th class="num">CSAT Received</th>
+            <th class="num">Response Rate</th>
+            <th class="num">Avg CSAT</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_VERSION = '2.11';
+const PROXY_URL = `${window.location.origin}/proxy-standalone?url=`;
+const DEFAULT_TEAM_NAME = 'Customer Support';
+
+const state = { admins: new Map(), teams: [] };
+
+function setStatus(msg, isErr) {
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.className = isErr ? 'err' : '';
+}
+
+function proxyFetch(url, options = {}) {
+  return fetch(PROXY_URL + encodeURIComponent(url), {
+    ...options,
+    headers: { 'Intercom-Version': API_VERSION, 'Content-Type': 'application/json', ...(options.headers || {}) }
+  });
+}
+
+async function intercomGet(path) {
+  const res = await proxyFetch(`https://api.intercom.io${path}`);
+  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+  return res.json();
+}
+
+async function intercomPost(path, body) {
+  const res = await proxyFetch(`https://api.intercom.io${path}`, { method: 'POST', body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
+  return res.json();
+}
+
+async function fetchAllPages(path, body, collectionKey) {
+  const items = [];
+  let startingAfter = null;
+  while (true) {
+    const page = await intercomPost(path, {
+      ...body,
+      pagination: { per_page: 150, ...(startingAfter ? { starting_after: startingAfter } : {}) }
+    });
+    items.push(...(page[collectionKey] || []));
+    const next = page.pages && page.pages.next;
+    startingAfter = next && next.starting_after ? next.starting_after : null;
+    if (!startingAfter) break;
+  }
+  return items;
+}
+
+async function loadAdmins() {
+  const data = await intercomGet('/admins');
+  for (const a of data.admins || []) state.admins.set(String(a.id), a.name || a.email || `Admin ${a.id}`);
+}
+
+async function loadTeams() {
+  const data = await intercomGet('/teams');
+  state.teams = (data.teams || []).map(t => ({ id: String(t.id), name: t.name }));
+  const sel = document.getElementById('teamSelect');
+  sel.innerHTML = '<option value="">(no team filter)</option>' +
+    state.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  const def = state.teams.find(t => t.name === DEFAULT_TEAM_NAME);
+  if (def) sel.value = def.id;
+}
+
+function defaultDates() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 30 * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  document.getElementById('startDate').value = fmt(start);
+  document.getElementById('endDate').value = fmt(end);
+}
+
+function dateToUnix(str, endOfDay) {
+  const d = new Date(`${str}T${endOfDay ? '23:59:59' : '00:00:00'}Z`);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function formatPercent(value) {
+  return value == null ? '—' : `${Math.round(value * 100)}%`;
+}
+
+function formatAvg(value) {
+  return value == null ? '—' : value.toFixed(2);
+}
+
+/**
+ * Closed conversations are attributed to statistics.last_closed_by_id (who
+ * actually performed the close). CSAT requested = conversation_rating exists
+ * (a survey was sent); CSAT received = that rating is non-null (customer responded).
+ */
+function aggregateByAgent(conversations) {
+  const rows = new Map();
+  const getRow = (adminId) => {
+    if (!rows.has(adminId)) {
+      rows.set(adminId, {
+        adminId,
+        name: state.admins.get(adminId) || `Admin ${adminId}`,
+        closedConversations: 0,
+        csatRequested: 0,
+        csatReceived: 0,
+        csatRatingSum: 0,
+      });
+    }
+    return rows.get(adminId);
+  };
+
+  for (const convo of conversations) {
+    const closedById = convo.statistics && convo.statistics.last_closed_by_id;
+    if (!closedById) continue;
+    const row = getRow(String(closedById));
+    row.closedConversations += 1;
+
+    const rating = convo.conversation_rating;
+    if (rating) {
+      row.csatRequested += 1;
+      if (rating.rating != null) {
+        row.csatReceived += 1;
+        row.csatRatingSum += rating.rating;
+      }
+    }
+  }
+
+  return Array.from(rows.values())
+    .map(row => ({
+      adminId: row.adminId,
+      name: row.name,
+      closedConversations: row.closedConversations,
+      csatRequested: row.csatRequested,
+      csatReceived: row.csatReceived,
+      csatResponseRate: row.csatRequested > 0 ? row.csatReceived / row.csatRequested : null,
+      avgCsat: row.csatReceived > 0 ? row.csatRatingSum / row.csatReceived : null,
+    }))
+    .sort((a, b) => b.closedConversations - a.closedConversations);
+}
+
+function renderSummary(agents) {
+  const totalClosed = agents.reduce((sum, a) => sum + a.closedConversations, 0);
+  const totalRequested = agents.reduce((sum, a) => sum + a.csatRequested, 0);
+  const totalReceived = agents.reduce((sum, a) => sum + a.csatReceived, 0);
+  const totalRatingSum = agents.reduce((sum, a) => sum + (a.avgCsat != null ? a.avgCsat * a.csatReceived : 0), 0);
+  const overallAvg = totalReceived > 0 ? totalRatingSum / totalReceived : null;
+  const overallResponseRate = totalRequested > 0 ? totalReceived / totalRequested : null;
+
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="num">${totalClosed}</div><div class="label">Closed Conversations</div></div>
+    <div class="card"><div class="num">${totalRequested}</div><div class="label">CSAT Requested</div></div>
+    <div class="card"><div class="num">${totalReceived}</div><div class="label">CSAT Received</div></div>
+    <div class="card"><div class="num">${formatPercent(overallResponseRate)}</div><div class="label">Response Rate</div></div>
+    <div class="card"><div class="num">${formatAvg(overallAvg)}</div><div class="label">Avg CSAT</div></div>
+  `;
+  document.getElementById('summaryPanel').style.display = '';
+}
+
+function renderTable(agents) {
+  const tbody = document.getElementById('leaderboardBody');
+  if (!agents.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No closed conversations found for that range.</td></tr>';
+  } else {
+    tbody.innerHTML = agents.map(a => `
+      <tr>
+        <td>${a.name}</td>
+        <td class="num">${a.closedConversations}</td>
+        <td class="num">${a.csatRequested}</td>
+        <td class="num">${a.csatReceived}</td>
+        <td class="num">${formatPercent(a.csatResponseRate)}</td>
+        <td class="num">${formatAvg(a.avgCsat)}</td>
+      </tr>
+    `).join('');
+  }
+  document.getElementById('tablePanel').style.display = '';
+}
+
+async function runReport() {
+  const runBtn = document.getElementById('runBtn');
+  runBtn.disabled = true;
+  document.getElementById('summaryPanel').style.display = 'none';
+  document.getElementById('tablePanel').style.display = 'none';
+
+  try {
+    const startUnix = dateToUnix(document.getElementById('startDate').value, false);
+    const endUnix = dateToUnix(document.getElementById('endDate').value, true);
+    const teamId = document.getElementById('teamSelect').value;
+
+    const conditions = [
+      { field: 'state', operator: '=', value: 'closed' },
+      { field: 'statistics.last_close_at', operator: '>', value: startUnix },
+      { field: 'statistics.last_close_at', operator: '<', value: endUnix },
+    ];
+    if (teamId) conditions.push({ field: 'team_assignee_id', operator: '=', value: teamId });
+
+    setStatus('Fetching closed conversations…');
+    const conversations = await fetchAllPages(
+      '/conversations/search',
+      { query: { operator: 'AND', value: conditions } },
+      'conversations'
+    );
+
+    const agents = aggregateByAgent(conversations);
+    renderSummary(agents);
+    renderTable(agents);
+    setStatus(`Done — ${conversations.length} closed conversation(s), ${agents.length} agent(s).`);
+  } catch (err) {
+    console.error(err);
+    setStatus(`Error: ${err.message}`, true);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+async function init() {
+  defaultDates();
+  try {
+    await Promise.all([loadAdmins(), loadTeams()]);
+    document.getElementById('runBtn').disabled = false;
+    setStatus('');
+  } catch (err) {
+    console.error(err);
+    setStatus(`Failed to load teams/admins: ${err.message}`, true);
+  }
+}
+
+document.getElementById('runBtn').addEventListener('click', runReport);
+init();
+</script>
