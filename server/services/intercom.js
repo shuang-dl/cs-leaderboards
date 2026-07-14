@@ -14,10 +14,16 @@ function authHeaders() {
 }
 
 async function intercomRequest(path, options = {}) {
-  const res = await fetch(`${INTERCOM_API_BASE}${path}`, {
-    ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) },
-  });
+  let res;
+  try {
+    res = await fetch(`${INTERCOM_API_BASE}${path}`, {
+      ...options,
+      headers: { ...authHeaders(), ...(options.headers || {}) },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (err) {
+    throw new Error(`Intercom API ${path} unreachable: ${err.message}`);
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Intercom API ${path} failed: ${res.status} ${body}`);
