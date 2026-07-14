@@ -28,6 +28,15 @@ async function generateLeaderboard() {
 
   try {
     const res = await fetch(`/api/leaderboard?start=${start}&end=${end}`);
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `Server returned a non-JSON response (status ${res.status}). ` +
+          "This usually means an auth gate or proxy intercepted the request rather than the app itself."
+      );
+    }
+
     const data = await res.json();
 
     if (!res.ok) {
