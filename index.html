@@ -204,23 +204,35 @@ function setSyncStatus(msg, isErr) {
   el.className = isErr ? 'err' : '';
 }
 
-async function syncFromIntercom() {
+function syncFromIntercom() {
   const syncBtn = document.getElementById('syncBtn');
   syncBtn.disabled = true;
   const start = document.getElementById('startDate').value;
   const end = document.getElementById('endDate').value;
 
-  try {
-    setSyncStatus(`Syncing ${start} to ${end} from Intercom…`);
-    const data = await fetchJSON(`/sync-conversations?start=${start}&end=${end}`, { method: 'POST' });
-    if (data.error) throw new Error(data.error);
-    setSyncStatus(`Synced ${data.synced} conversation(s) (${data.fetched} fetched, ${data.skipped} skipped — no closing admin).`);
-  } catch (err) {
-    console.error(err);
-    setSyncStatus(`Error: ${err.message}`, true);
-  } finally {
+  setSyncStatus(`Syncing ${start} to ${end} from Intercom…`);
+  const source = new EventSource(`/sync-conversations?start=${start}&end=${end}`);
+
+  source.addEventListener('progress', (e) => {
+    const p = JSON.parse(e.data);
+    setSyncStatus(`Syncing… ${p.fetched} fetched, ${p.synced} synced so far.`);
+  });
+
+  source.addEventListener('done', (e) => {
+    const d = JSON.parse(e.data);
+    setSyncStatus(`Synced ${d.synced} conversation(s) (${d.fetched} fetched, ${d.skipped} skipped — no closing admin).`);
+    source.close();
     syncBtn.disabled = false;
-  }
+  });
+
+  source.addEventListener('error', (e) => {
+    // Distinguish our own named "error" event (has e.data) from the browser's
+    // generic connection-error event (fired e.g. if the stream never opens).
+    const message = e.data ? JSON.parse(e.data).message : 'Connection to the server was lost';
+    setSyncStatus(`Error: ${message}`, true);
+    source.close();
+    syncBtn.disabled = false;
+  });
 }
 
 async function runReport() {

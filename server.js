@@ -6,8 +6,10 @@
 // Three routes:
 //   GET  /proxy-standalone?url=...   generic Intercom proxy for the browser's own
 //                                    calls (admins/teams, for names + team filter)
-//   POST /sync-conversations         server fetches closed conversations from
-//                                    Intercom and upserts them into Postgres
+//   GET  /sync-conversations         SSE stream: server fetches closed conversations
+//                                    from Intercom and upserts them into Postgres,
+//                                    emitting progress events as it goes (avoids
+//                                    gateway timeouts on wide date ranges)
 //   GET  /leaderboard-data           reads the leaderboard straight out of
 //                                    Postgres (aggregated via SQL)
 //
@@ -106,44 +108,39 @@ function sendJSON(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-async function fetchClosedConversations(startUnix, endUnix) {
-  const conversations = [];
-  let startingAfter = null;
+async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter) {
+  const body = {
+    query: {
+      operator: 'AND',
+      value: [
+        { field: 'state', operator: '=', value: 'closed' },
+        { field: 'statistics.last_close_at', operator: '>', value: startUnix },
+        { field: 'statistics.last_close_at', operator: '<', value: endUnix },
+      ],
+    },
+    pagination: { per_page: 150, ...(startingAfter ? { starting_after: startingAfter } : {}) },
+  };
 
-  do {
-    const body = {
-      query: {
-        operator: 'AND',
-        value: [
-          { field: 'state', operator: '=', value: 'closed' },
-          { field: 'statistics.last_close_at', operator: '>', value: startUnix },
-          { field: 'statistics.last_close_at', operator: '<', value: endUnix },
-        ],
-      },
-      pagination: { per_page: 150, ...(startingAfter ? { starting_after: startingAfter } : {}) },
-    };
+  const res = await fetch('https://api.intercom.io/conversations/search', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${INTERCOM_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Intercom-Version': '2.11',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
+  });
 
-    const res = await fetch('https://api.intercom.io/conversations/search', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${INTERCOM_API_KEY}`,
-        'Content-Type': 'application/json',
-        'Intercom-Version': '2.11',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
+  if (!res.ok) {
+    throw new Error(`Intercom conversations/search failed: ${res.status} ${await res.text()}`);
+  }
 
-    if (!res.ok) {
-      throw new Error(`Intercom conversations/search failed: ${res.status} ${await res.text()}`);
-    }
-
-    const page = await res.json();
-    conversations.push(...(page.conversations || []));
-    startingAfter = page.pages && page.pages.next ? page.pages.next.starting_after : null;
-  } while (startingAfter);
-
-  return conversations;
+  const page = await res.json();
+  return {
+    conversations: page.conversations || [],
+    nextStartingAfter: page.pages && page.pages.next ? page.pages.next.starting_after : null,
+  };
 }
 
 function toRow(convo) {
@@ -161,6 +158,20 @@ function toRow(convo) {
     csatReceived: Boolean(rating && rating.rating != null),
     csatRating: rating && rating.rating != null ? rating.rating : null,
   };
+}
+
+// Streams progress via SSE instead of one big blocking response: syncing a wide
+// date range means many sequential Intercom pages + DB writes, which can easily
+// exceed a gateway's idle/read timeout on a plain request-response call (this
+// surfaced as a 504 in practice). A continuously-active streamed connection
+// avoids that, and gives the user real progress instead of a silent wait.
+function openSseStream(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  return (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 async function handleSync(req, res) {
@@ -181,15 +192,29 @@ async function handleSync(req, res) {
     return sendJSON(res, 400, { error: 'Invalid date range' });
   }
 
+  const send = openSseStream(res);
+  let fetched = 0;
+  let synced = 0;
+  let skipped = 0;
+
   try {
-    const conversations = await fetchClosedConversations(startUnix, endUnix);
-    const rows = conversations.map(toRow).filter(Boolean);
-    const skipped = conversations.length - rows.length;
-    const synced = await db.upsertConversations(rows);
-    sendJSON(res, 200, { start, end, fetched: conversations.length, synced, skipped });
+    let startingAfter = null;
+    do {
+      const page = await fetchClosedConversationsPage(startUnix, endUnix, startingAfter);
+      const rows = page.conversations.map(toRow).filter(Boolean);
+      skipped += page.conversations.length - rows.length;
+      fetched += page.conversations.length;
+      if (rows.length) synced += await db.upsertConversations(rows);
+      startingAfter = page.nextStartingAfter;
+      send('progress', { fetched, synced, skipped });
+    } while (startingAfter);
+
+    send('done', { start, end, fetched, synced, skipped });
   } catch (err) {
     console.error('Sync failed:', err);
-    sendJSON(res, 500, { error: 'Sync failed', message: err.message });
+    send('error', { message: err.message });
+  } finally {
+    res.end();
   }
 }
 
@@ -250,7 +275,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (parsed.pathname === SYNC_ROUTE && req.method === 'POST') {
+  if (parsed.pathname === SYNC_ROUTE && req.method === 'GET') {
     handleSync(req, res);
     return;
   }
