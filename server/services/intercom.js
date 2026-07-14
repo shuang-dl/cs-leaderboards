@@ -14,11 +14,12 @@ function authHeaders() {
 }
 
 async function intercomRequest(path, options = {}) {
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
   let res;
   try {
     res = await fetch(`${INTERCOM_API_BASE}${path}`, {
       ...options,
-      headers: { ...authHeaders(), ...(options.headers || {}) },
+      headers,
       signal: AbortSignal.timeout(15000),
     });
   } catch (err) {

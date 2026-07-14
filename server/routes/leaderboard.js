@@ -20,7 +20,7 @@ router.get("/leaderboard", async (req, res) => {
     return res.json({ error: "Invalid date range" });
   }
 
-  console.log(`GET /api/leaderboard start=${start} end=${end}`);
+  console.log(`GET /app-data/leaderboard start=${start} end=${end}`);
 
   try {
     const agents = await getLeaderboard({ startTs, endTs });

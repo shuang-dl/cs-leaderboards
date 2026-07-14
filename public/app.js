@@ -27,7 +27,7 @@ async function generateLeaderboard() {
   table.hidden = true;
 
   try {
-    const res = await fetch(`/api/leaderboard?start=${start}&end=${end}`);
+    const res = await fetch(`/app-data/leaderboard?start=${start}&end=${end}`);
 
     const contentType = res.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
