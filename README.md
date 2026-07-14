@@ -39,7 +39,7 @@ cp .env.example .env
 npm start
 ```
 
-Open http://localhost:3000.
+Open http://localhost:8080.
 
 ## Environment variables
 
@@ -48,7 +48,7 @@ Open http://localhost:3000.
 | `INTERCOM_ACCESS_TOKEN`  | yes      | Intercom API access token                          |
 | `INTERCOM_TEAM_ID`       | no       | Restrict results to one team's admins              |
 | `DATABASE_URL`           | no       | Postgres connection string (Deploybay-provisioned) |
-| `PORT`                   | no       | Defaults to 3000                                   |
+| `PORT`                   | no       | Defaults to 8080 (Deploybay expects the container on 8080) |
 
 If `DATABASE_URL` is unset, the app still works — it just skips persistence.
 
