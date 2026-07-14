@@ -18,8 +18,9 @@
   input[type="date"], select { background: #0f1115; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
   button { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
-  #status { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
-  #status.err { color: var(--bad); }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  #status, #syncStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  #status.err, #syncStatus.err { color: var(--bad); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .card { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
   .card .num { font-size: 26px; font-weight: 700; }
@@ -33,7 +34,7 @@
 
 <header>
   <h1>Customer Support Leaderboard</h1>
-  <p>Pulls directly from the Intercom API through the local proxy. No AI processing in this data path — everything below runs in your browser.</p>
+  <p><strong>Sync from Intercom</strong> pulls closed conversations for the selected range into the database. <strong>Generate Leaderboard</strong> reads from that database — instant, no live Intercom call.</p>
 </header>
 
 <main>
@@ -56,8 +57,13 @@
         <label>&nbsp;</label>
         <button id="runBtn" disabled>Generate Leaderboard</button>
       </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button id="syncBtn" class="secondary" disabled>Sync from Intercom</button>
+      </div>
     </div>
     <div id="status"></div>
+    <div id="syncStatus"></div>
   </div>
 
   <div class="panel" id="summaryPanel" style="display:none;">
@@ -111,28 +117,6 @@ async function intercomGet(path) {
   return res.json();
 }
 
-async function intercomPost(path, body) {
-  const res = await proxyFetch(`https://api.intercom.io${path}`, { method: 'POST', body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
-  return res.json();
-}
-
-async function fetchAllPages(path, body, collectionKey) {
-  const items = [];
-  let startingAfter = null;
-  while (true) {
-    const page = await intercomPost(path, {
-      ...body,
-      pagination: { per_page: 150, ...(startingAfter ? { starting_after: startingAfter } : {}) }
-    });
-    items.push(...(page[collectionKey] || []));
-    const next = page.pages && page.pages.next;
-    startingAfter = next && next.starting_after ? next.starting_after : null;
-    if (!startingAfter) break;
-  }
-  return items;
-}
-
 async function loadAdmins() {
   const data = await intercomGet('/admins');
   for (const a of data.admins || []) state.admins.set(String(a.id), a.name || a.email || `Admin ${a.id}`);
@@ -150,15 +134,10 @@ async function loadTeams() {
 
 function defaultDates() {
   const end = new Date();
-  const start = new Date(end.getTime() - 30 * 86400000);
+  const start = new Date(end.getTime() - 90 * 86400000);
   const fmt = (d) => d.toISOString().slice(0, 10);
   document.getElementById('startDate').value = fmt(start);
   document.getElementById('endDate').value = fmt(end);
-}
-
-function dateToUnix(str, endOfDay) {
-  const d = new Date(`${str}T${endOfDay ? '23:59:59' : '00:00:00'}Z`);
-  return Math.floor(d.getTime() / 1000);
 }
 
 function formatPercent(value) {
@@ -167,56 +146,6 @@ function formatPercent(value) {
 
 function formatAvg(value) {
   return value == null ? '—' : value.toFixed(2);
-}
-
-/**
- * Closed conversations are attributed to statistics.last_closed_by_id (who
- * actually performed the close). CSAT requested = conversation_rating exists
- * (a survey was sent); CSAT received = that rating is non-null (customer responded).
- */
-function aggregateByAgent(conversations) {
-  const rows = new Map();
-  const getRow = (adminId) => {
-    if (!rows.has(adminId)) {
-      rows.set(adminId, {
-        adminId,
-        name: state.admins.get(adminId) || `Admin ${adminId}`,
-        closedConversations: 0,
-        csatRequested: 0,
-        csatReceived: 0,
-        csatRatingSum: 0,
-      });
-    }
-    return rows.get(adminId);
-  };
-
-  for (const convo of conversations) {
-    const closedById = convo.statistics && convo.statistics.last_closed_by_id;
-    if (!closedById) continue;
-    const row = getRow(String(closedById));
-    row.closedConversations += 1;
-
-    const rating = convo.conversation_rating;
-    if (rating) {
-      row.csatRequested += 1;
-      if (rating.rating != null) {
-        row.csatReceived += 1;
-        row.csatRatingSum += rating.rating;
-      }
-    }
-  }
-
-  return Array.from(rows.values())
-    .map(row => ({
-      adminId: row.adminId,
-      name: row.name,
-      closedConversations: row.closedConversations,
-      csatRequested: row.csatRequested,
-      csatReceived: row.csatReceived,
-      csatResponseRate: row.csatRequested > 0 ? row.csatReceived / row.csatRequested : null,
-      avgCsat: row.csatReceived > 0 ? row.csatRatingSum / row.csatReceived : null,
-    }))
-    .sort((a, b) => b.closedConversations - a.closedConversations);
 }
 
 function renderSummary(agents) {
@@ -256,6 +185,32 @@ function renderTable(agents) {
   document.getElementById('tablePanel').style.display = '';
 }
 
+function setSyncStatus(msg, isErr) {
+  const el = document.getElementById('syncStatus');
+  el.textContent = msg || '';
+  el.className = isErr ? 'err' : '';
+}
+
+async function syncFromIntercom() {
+  const syncBtn = document.getElementById('syncBtn');
+  syncBtn.disabled = true;
+  const start = document.getElementById('startDate').value;
+  const end = document.getElementById('endDate').value;
+
+  try {
+    setSyncStatus(`Syncing ${start} to ${end} from Intercom…`);
+    const res = await fetch(`/sync-conversations?start=${start}&end=${end}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    setSyncStatus(`Synced ${data.synced} conversation(s) (${data.fetched} fetched, ${data.skipped} skipped — no closing admin).`);
+  } catch (err) {
+    console.error(err);
+    setSyncStatus(`Error: ${err.message}`, true);
+  } finally {
+    syncBtn.disabled = false;
+  }
+}
+
 async function runReport() {
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
@@ -263,28 +218,24 @@ async function runReport() {
   document.getElementById('tablePanel').style.display = 'none';
 
   try {
-    const startUnix = dateToUnix(document.getElementById('startDate').value, false);
-    const endUnix = dateToUnix(document.getElementById('endDate').value, true);
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
     const teamId = document.getElementById('teamSelect').value;
 
-    const conditions = [
-      { field: 'state', operator: '=', value: 'closed' },
-      { field: 'statistics.last_close_at', operator: '>', value: startUnix },
-      { field: 'statistics.last_close_at', operator: '<', value: endUnix },
-    ];
-    if (teamId) conditions.push({ field: 'team_assignee_id', operator: '=', value: teamId });
+    setStatus('Reading leaderboard from the database…');
+    const qs = new URLSearchParams({ start, end, ...(teamId ? { team: teamId } : {}) });
+    const res = await fetch(`/leaderboard-data?${qs}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
 
-    setStatus('Fetching closed conversations…');
-    const conversations = await fetchAllPages(
-      '/conversations/search',
-      { query: { operator: 'AND', value: conditions } },
-      'conversations'
-    );
+    const agents = data.agents.map(a => ({
+      ...a,
+      name: state.admins.get(a.adminId) || `Admin ${a.adminId}`,
+    })).sort((a, b) => b.closedConversations - a.closedConversations);
 
-    const agents = aggregateByAgent(conversations);
     renderSummary(agents);
     renderTable(agents);
-    setStatus(`Done — ${conversations.length} closed conversation(s), ${agents.length} agent(s).`);
+    setStatus(`Done — ${agents.length} agent(s). Data from the last sync, not a live Intercom pull.`);
   } catch (err) {
     console.error(err);
     setStatus(`Error: ${err.message}`, true);
@@ -298,6 +249,7 @@ async function init() {
   try {
     await Promise.all([loadAdmins(), loadTeams()]);
     document.getElementById('runBtn').disabled = false;
+    document.getElementById('syncBtn').disabled = false;
     setStatus('');
   } catch (err) {
     console.error(err);
@@ -306,5 +258,6 @@ async function init() {
 }
 
 document.getElementById('runBtn').addEventListener('click', runReport);
+document.getElementById('syncBtn').addEventListener('click', syncFromIntercom);
 init();
 </script>
