@@ -108,7 +108,7 @@ function sendJSON(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter) {
+async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter, attempt = 1) {
   const body = {
     query: {
       operator: 'AND',
@@ -121,26 +121,34 @@ async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter) {
     pagination: { per_page: 150, ...(startingAfter ? { starting_after: startingAfter } : {}) },
   };
 
-  const res = await fetch('https://api.intercom.io/conversations/search', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${INTERCOM_API_KEY}`,
-      'Content-Type': 'application/json',
-      'Intercom-Version': '2.11',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
-  });
+  try {
+    const res = await fetch('https://api.intercom.io/conversations/search', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${INTERCOM_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Intercom-Version': '2.11',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45000),
+    });
 
-  if (!res.ok) {
-    throw new Error(`Intercom conversations/search failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      throw new Error(`Intercom conversations/search failed: ${res.status} ${await res.text()}`);
+    }
+
+    const page = await res.json();
+    return {
+      conversations: page.conversations || [],
+      nextStartingAfter: page.pages && page.pages.next ? page.pages.next.starting_after : null,
+    };
+  } catch (err) {
+    const isTimeout = err.name === 'TimeoutError' || /timeout/i.test(err.message);
+    if (isTimeout && attempt < 3) {
+      return fetchClosedConversationsPage(startUnix, endUnix, startingAfter, attempt + 1);
+    }
+    throw err;
   }
-
-  const page = await res.json();
-  return {
-    conversations: page.conversations || [],
-    nextStartingAfter: page.pages && page.pages.next ? page.pages.next.starting_after : null,
-  };
 }
 
 function toRow(convo) {
