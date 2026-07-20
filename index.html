@@ -15,6 +15,7 @@
   .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .panel-header { display: flex; align-items: center; justify-content: space-between; }
   .panel-header h2 { margin: 0; }
+  .range-label { margin-left: 10px; font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: normal; }
   .icon-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 4px 10px; font-size: 13px; line-height: 1; }
   .panel.fullscreen {
     position: fixed; inset: 0; z-index: 1000; margin: 0; max-width: none;
@@ -80,9 +81,14 @@
 
   <div class="panel" id="tablePanel" style="display:none;">
     <div class="panel-header">
-      <h2>By teammate</h2>
-      <button id="expandBtn" class="icon-btn" type="button" title="Expand to full screen">⛶</button>
-      <button id="collapseBtn" class="icon-btn" type="button" title="Exit full screen" style="display:none;">✕</button>
+      <div>
+        <h2 style="display:inline;">By teammate</h2>
+        <span id="tableRangeLabel" class="range-label"></span>
+      </div>
+      <div>
+        <button id="expandBtn" class="icon-btn" type="button" title="Expand to full screen">⛶</button>
+        <button id="collapseBtn" class="icon-btn" type="button" title="Exit full screen" style="display:none;">✕</button>
+      </div>
     </div>
     <div style="overflow-x:auto;">
       <table id="leaderboardTable">
@@ -316,6 +322,7 @@ async function runReport() {
       }))
       .sort((a, b) => b.closedConversations - a.closedConversations);
 
+    document.getElementById('tableRangeLabel').textContent = `${start} to ${end}`;
     renderSummary(agents);
     renderTable(agents);
     setStatus(`Done — ${agents.length} agent(s). Data from the last sync, not a live Intercom pull.`);
