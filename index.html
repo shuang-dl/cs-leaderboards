@@ -96,7 +96,9 @@
 <script>
 const API_VERSION = '2.11';
 const PROXY_URL = `${window.location.origin}/proxy-standalone?url=`;
-const DEFAULT_TEAM_NAME = 'Customer Support';
+// The leaderboard is scoped to just these two teams — resolved to Intercom team
+// ids at load time (names must match exactly what's configured in Intercom).
+const ALLOWED_TEAM_NAMES = ['Customer Support', 'Inbound Calls Team'];
 
 const state = { admins: new Map(), teams: [] };
 
@@ -139,12 +141,18 @@ async function loadAdmins() {
 
 async function loadTeams() {
   const data = await intercomGet('/teams');
-  state.teams = (data.teams || []).map(t => ({ id: String(t.id), name: t.name }));
+  const allTeams = (data.teams || []).map(t => ({ id: String(t.id), name: t.name }));
+  state.teams = ALLOWED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
+
+  const missing = ALLOWED_TEAM_NAMES.filter(name => !state.teams.some(t => t.name === name));
+  if (missing.length) setStatus(`Warning: could not find team(s) in Intercom: ${missing.join(', ')}`, true);
+
   const sel = document.getElementById('teamSelect');
-  sel.innerHTML = '<option value="">(no team filter)</option>' +
+  const bothValue = state.teams.map(t => t.id).join(',');
+  sel.innerHTML =
+    `<option value="${bothValue}">Both (${ALLOWED_TEAM_NAMES.join(' + ')})</option>` +
     state.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  const def = state.teams.find(t => t.name === DEFAULT_TEAM_NAME);
-  if (def) sel.value = def.id;
+  sel.value = bothValue;
 }
 
 function defaultDates() {

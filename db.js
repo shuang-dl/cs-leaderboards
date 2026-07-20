@@ -75,7 +75,7 @@ async function upsertConversations(rows) {
   }
 }
 
-async function queryLeaderboard({ startUnix, endUnix, teamId }) {
+async function queryLeaderboard({ startUnix, endUnix, teamIds }) {
   if (!pool) throw new Error('DATABASE_URL is not set');
 
   const result = await pool.query(
@@ -92,10 +92,10 @@ async function queryLeaderboard({ startUnix, endUnix, teamId }) {
      FROM cs_leaderboard_conversations
      WHERE last_close_at >= to_timestamp($1)
        AND last_close_at <= to_timestamp($2)
-       AND ($3::text IS NULL OR team_id = $3)
+       AND ($3::text[] IS NULL OR team_id = ANY($3::text[]))
      GROUP BY closed_by_admin_id
      ORDER BY closed_conversations DESC`,
-    [startUnix, endUnix, teamId || null]
+    [startUnix, endUnix, teamIds && teamIds.length ? teamIds : null]
   );
 
   return result.rows.map((r) => ({

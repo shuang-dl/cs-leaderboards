@@ -235,7 +235,7 @@ async function handleLeaderboardData(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host}`);
   const start = parsed.searchParams.get('start');
   const end = parsed.searchParams.get('end');
-  const teamId = parsed.searchParams.get('team');
+  const teamIds = (parsed.searchParams.get('team') || '').split(',').map((s) => s.trim()).filter(Boolean);
 
   if (!DATE_RE.test(start || '') || !DATE_RE.test(end || '')) {
     return sendJSON(res, 400, { error: 'start and end are required as YYYY-MM-DD' });
@@ -248,7 +248,7 @@ async function handleLeaderboardData(req, res) {
   }
 
   try {
-    const agents = await db.queryLeaderboard({ startUnix, endUnix, teamId });
+    const agents = await db.queryLeaderboard({ startUnix, endUnix, teamIds });
     sendJSON(res, 200, { start, end, agents });
   } catch (err) {
     console.error('Leaderboard query failed:', err);

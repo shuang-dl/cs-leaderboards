@@ -28,8 +28,11 @@ still storing data in Postgres.
 
 ## What it does
 
-1. Pick a team (defaults to Customer Support) and a date range (defaults to the last
-   90 days).
+1. Pick a team filter — Customer Support, Inbound Calls Team, or Both (default) — and
+   a date range (defaults to the last 90 days). These are the only two teams the
+   dropdown offers; team names are resolved to Intercom team ids at page load, so if
+   either team is renamed in Intercom this needs updating (`ALLOWED_TEAM_NAMES` in
+   `index.html`).
 2. Click **Sync from Intercom** to pull closed conversations for that range into
    Postgres. Re-running it for an overlapping range just updates existing rows
    (upsert on conversation id), so it's safe to re-sync.
