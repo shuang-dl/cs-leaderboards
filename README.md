@@ -44,6 +44,12 @@ For each teammate: closed conversations, CSAT requested, CSAT received, CSAT res
 rate, average CSAT score, average first response time (FRT), average time to close
 (TTC). The summary cards show the same set aggregated across the whole team.
 
+**Cross-team exclusion**: an agent is dropped from the leaderboard entirely if they're
+also a member of Onboarding Team, Merchant Processing, or Risk — regardless of which
+team the conversation itself belonged to. This runs client-side (`EXCLUDED_TEAM_NAMES`
+in `index.html`) using team membership (`admin_ids`) from Intercom's `/teams`
+endpoint, checked at page load. Update that list if the excluded teams change.
+
 ## How stats are derived from Intercom
 
 - **Closed conversations**: conversations with `state = closed` whose

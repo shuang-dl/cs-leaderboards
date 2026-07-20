@@ -100,7 +100,12 @@ const PROXY_URL = `${window.location.origin}/proxy-standalone?url=`;
 // ids at load time (names must match exactly what's configured in Intercom).
 const ALLOWED_TEAM_NAMES = ['Customer Support', 'Inbound Calls Team'];
 
-const state = { admins: new Map(), teams: [] };
+// Agents who are also members of any of these teams are excluded from the
+// leaderboard entirely (e.g. someone on both Customer Support and Risk shouldn't
+// show up here), regardless of which team a given conversation belonged to.
+const EXCLUDED_TEAM_NAMES = ['Onboarding Team', 'Merchant Processing', 'Risk'];
+
+const state = { admins: new Map(), teams: [], excludedAdminIds: new Set() };
 
 function setStatus(msg, isErr) {
   const el = document.getElementById('status');
@@ -141,10 +146,19 @@ async function loadAdmins() {
 
 async function loadTeams() {
   const data = await intercomGet('/teams');
-  const allTeams = (data.teams || []).map(t => ({ id: String(t.id), name: t.name }));
-  state.teams = ALLOWED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
+  const allTeams = (data.teams || []).map(t => ({
+    id: String(t.id),
+    name: t.name,
+    adminIds: (t.admin_ids || []).map(String),
+  }));
 
-  const missing = ALLOWED_TEAM_NAMES.filter(name => !state.teams.some(t => t.name === name));
+  state.teams = ALLOWED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
+  const excludedTeams = EXCLUDED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
+  state.excludedAdminIds = new Set(excludedTeams.flatMap(t => t.adminIds));
+
+  const missingAllowed = ALLOWED_TEAM_NAMES.filter(name => !state.teams.some(t => t.name === name));
+  const missingExcluded = EXCLUDED_TEAM_NAMES.filter(name => !excludedTeams.some(t => t.name === name));
+  const missing = [...missingAllowed, ...missingExcluded];
   if (missing.length) setStatus(`Warning: could not find team(s) in Intercom: ${missing.join(', ')}`, true);
 
   const sel = document.getElementById('teamSelect');
@@ -284,10 +298,13 @@ async function runReport() {
     const data = await fetchJSON(`/leaderboard-data?${qs}`);
     if (data.error) throw new Error(data.error);
 
-    const agents = data.agents.map(a => ({
-      ...a,
-      name: state.admins.get(a.adminId) || `Admin ${a.adminId}`,
-    })).sort((a, b) => b.closedConversations - a.closedConversations);
+    const agents = data.agents
+      .filter(a => !state.excludedAdminIds.has(a.adminId))
+      .map(a => ({
+        ...a,
+        name: state.admins.get(a.adminId) || `Admin ${a.adminId}`,
+      }))
+      .sort((a, b) => b.closedConversations - a.closedConversations);
 
     renderSummary(agents);
     renderTable(agents);
