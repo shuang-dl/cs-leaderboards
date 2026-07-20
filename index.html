@@ -28,8 +28,6 @@
   button:disabled { opacity: .5; cursor: default; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.danger { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
-  .quick-select { display: flex; gap: 8px; }
-  .quick-select button { padding: 7px 12px; }
   #status, #syncStatus, #clearDbStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
   #status.err, #syncStatus.err, #clearDbStatus.err { color: var(--bad); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -57,6 +55,21 @@
         <select id="teamSelect"><option value="">Loading teams…</option></select>
       </div>
       <div class="field">
+        <label>Quick select</label>
+        <select id="quickSelect">
+          <option value="">Quick select…</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="wtd">Week to Date</option>
+          <option value="mtd">Month to Date</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button id="runBtn" disabled>Generate Leaderboard</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field">
         <label>From</label>
         <input type="date" id="startDate">
       </div>
@@ -66,23 +79,9 @@
       </div>
       <div class="field">
         <label>&nbsp;</label>
-        <button id="runBtn" disabled>Generate Leaderboard</button>
+        <button id="syncBtn" class="secondary" disabled>Sync</button>
       </div>
       <div class="field">
-        <label>&nbsp;</label>
-        <button id="syncBtn" class="secondary" disabled>Sync from Intercom</button>
-      </div>
-    </div>
-    <div class="row" style="margin-top:12px;">
-      <div class="field">
-        <label>Quick select</label>
-        <div class="quick-select">
-          <button type="button" class="secondary" data-range="yesterday">Yesterday</button>
-          <button type="button" class="secondary" data-range="wtd">Week to Date</button>
-          <button type="button" class="secondary" data-range="mtd">Month to Date</button>
-        </div>
-      </div>
-      <div class="field" style="margin-left:auto;">
         <label>&nbsp;</label>
         <button id="clearDbBtn" class="danger">Clear Database</button>
       </div>
@@ -424,8 +423,10 @@ document.getElementById('syncBtn').addEventListener('click', syncFromIntercom);
 document.getElementById('expandBtn').addEventListener('click', () => setTableFullscreen(true));
 document.getElementById('collapseBtn').addEventListener('click', () => setTableFullscreen(false));
 document.getElementById('clearDbBtn').addEventListener('click', clearDatabase);
-document.querySelectorAll('.quick-select button').forEach(btn => {
-  btn.addEventListener('click', () => setQuickRange(btn.dataset.range));
+document.getElementById('quickSelect').addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  setQuickRange(e.target.value);
+  e.target.value = '';
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') setTableFullscreen(false);
