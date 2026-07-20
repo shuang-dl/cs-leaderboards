@@ -153,6 +153,14 @@ async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter, a
   }
 }
 
+// Time from first human/team assignment (leaving the bot inbox) to the first
+// admin reply, rather than from conversation start — excludes bot/Fin triage time.
+function computeFrtSeconds(stats) {
+  if (stats.first_assignment_at == null || stats.first_admin_reply_at == null) return null;
+  const delta = stats.first_admin_reply_at - stats.first_assignment_at;
+  return delta >= 0 ? delta : null;
+}
+
 function toRow(convo) {
   const stats = convo.statistics;
   const closedByAdminId = stats && stats.last_closed_by_id;
@@ -168,9 +176,9 @@ function toRow(convo) {
     csatRequested: Boolean(rating),
     csatReceived: Boolean(rating && rating.rating != null),
     csatRating: rating && rating.rating != null ? rating.rating : null,
-    // FRT: time to the first admin reply. TTC: time to the last close — paired
-    // with last_closed_by_id above, so it matches who/what we're attributing to.
-    frtSeconds: stats.time_to_admin_reply != null ? stats.time_to_admin_reply : null,
+    frtSeconds: computeFrtSeconds(stats),
+    // TTC: time to the last close — paired with last_closed_by_id above, so it
+    // matches who/what we're attributing to.
     ttcSeconds: stats.time_to_last_close != null ? stats.time_to_last_close : null,
   };
 }

@@ -70,10 +70,19 @@ first — "Are you sure you want to clear all the data in the database?"
 - **Team filter**: uses `team_assignee_id` on the conversation (who the conversation
   belongs to), stored per row so filtering by team at leaderboard time doesn't require
   re-syncing.
-- **Avg FRT (first response time)**: average of `statistics.time_to_admin_reply`
-  (seconds from conversation start to the first admin reply).
+- **Avg FRT (first response time)**: `statistics.first_admin_reply_at` minus
+  `statistics.first_assignment_at` — time from when a human/team was first assigned
+  (i.e. once it leaves the bot inbox) to the first admin reply. Deliberately *not*
+  `time_to_admin_reply`, which is measured from conversation start and would include
+  bot/Fin triage time. Null (excluded from the average) if either timestamp is
+  missing, or if the computed delta is negative.
 - **Avg TTC (time to close)**: average of `statistics.time_to_last_close` (seconds to
-  the same last-close event used for attribution above).
+  the same last-close event used for attribution above). This does **not** exclude
+  snooze time — doing so would require fetching each conversation's full
+  `conversation_parts` history individually (Intercom doesn't expose total-snoozed-time
+  as a precomputed statistic), which would add one extra API call per conversation to
+  every sync. Deferred for now; revisit if TTC accuracy becomes a priority worth that
+  cost.
 
 ## Running it locally
 
