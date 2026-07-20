@@ -27,8 +27,11 @@
   button { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
-  #status, #syncStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
-  #status.err, #syncStatus.err { color: var(--bad); }
+  button.danger { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+  .quick-select { display: flex; gap: 8px; }
+  .quick-select button { padding: 7px 12px; }
+  #status, #syncStatus, #clearDbStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  #status.err, #syncStatus.err, #clearDbStatus.err { color: var(--bad); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .card { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
   .card .num { font-size: 26px; font-weight: 700; }
@@ -70,8 +73,23 @@
         <button id="syncBtn" class="secondary" disabled>Sync from Intercom</button>
       </div>
     </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field">
+        <label>Quick select</label>
+        <div class="quick-select">
+          <button type="button" class="secondary" data-range="yesterday">Yesterday</button>
+          <button type="button" class="secondary" data-range="wtd">Week to Date</button>
+          <button type="button" class="secondary" data-range="mtd">Month to Date</button>
+        </div>
+      </div>
+      <div class="field" style="margin-left:auto;">
+        <label>&nbsp;</label>
+        <button id="clearDbBtn" class="danger">Clear Database</button>
+      </div>
+    </div>
     <div id="status"></div>
     <div id="syncStatus"></div>
+    <div id="clearDbStatus"></div>
   </div>
 
   <div class="panel" id="summaryPanel" style="display:none;">
@@ -181,12 +199,38 @@ async function loadTeams() {
   sel.value = bothValue;
 }
 
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
 function defaultDates() {
   const end = new Date();
   const start = new Date(end.getTime() - 90 * 86400000);
-  const fmt = (d) => d.toISOString().slice(0, 10);
-  document.getElementById('startDate').value = fmt(start);
-  document.getElementById('endDate').value = fmt(end);
+  document.getElementById('startDate').value = fmtDate(start);
+  document.getElementById('endDate').value = fmtDate(end);
+}
+
+function setQuickRange(range) {
+  const today = new Date();
+  let start, end;
+
+  if (range === 'yesterday') {
+    start = end = new Date(today.getTime() - 86400000);
+  } else if (range === 'wtd') {
+    // Week starts Monday.
+    const dayOfWeek = today.getDay(); // 0 = Sunday
+    const daysSinceMonday = (dayOfWeek + 6) % 7;
+    start = new Date(today.getTime() - daysSinceMonday * 86400000);
+    end = today;
+  } else if (range === 'mtd') {
+    start = new Date(today.getFullYear(), today.getMonth(), 1);
+    end = today;
+  } else {
+    return;
+  }
+
+  document.getElementById('startDate').value = fmtDate(start);
+  document.getElementById('endDate').value = fmtDate(end);
 }
 
 function formatPercent(value) {
@@ -353,10 +397,36 @@ function setTableFullscreen(fullscreen) {
   document.getElementById('collapseBtn').style.display = fullscreen ? '' : 'none';
 }
 
+async function clearDatabase() {
+  if (!confirm('Are you sure you want to clear all the data in the database?')) return;
+
+  const btn = document.getElementById('clearDbBtn');
+  const statusEl = document.getElementById('clearDbStatus');
+  btn.disabled = true;
+  statusEl.className = '';
+  statusEl.textContent = 'Clearing database…';
+
+  try {
+    const data = await fetchJSON('/clear-database', { method: 'POST' });
+    if (data.error) throw new Error(data.error);
+    statusEl.textContent = 'Database cleared.';
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.className = 'err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 document.getElementById('runBtn').addEventListener('click', runReport);
 document.getElementById('syncBtn').addEventListener('click', syncFromIntercom);
 document.getElementById('expandBtn').addEventListener('click', () => setTableFullscreen(true));
 document.getElementById('collapseBtn').addEventListener('click', () => setTableFullscreen(false));
+document.getElementById('clearDbBtn').addEventListener('click', clearDatabase);
+document.querySelectorAll('.quick-select button').forEach(btn => {
+  btn.addEventListener('click', () => setQuickRange(btn.dataset.range));
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') setTableFullscreen(false);
 });

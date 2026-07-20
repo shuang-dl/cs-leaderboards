@@ -112,4 +112,9 @@ async function queryLeaderboard({ startUnix, endUnix, teamIds }) {
   }));
 }
 
-module.exports = { pool, ensureSchema, upsertConversations, queryLeaderboard };
+async function clearAll() {
+  if (!pool) throw new Error('DATABASE_URL is not set');
+  await pool.query('TRUNCATE cs_leaderboard_conversations');
+}
+
+module.exports = { pool, ensureSchema, upsertConversations, queryLeaderboard, clearAll };

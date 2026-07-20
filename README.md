@@ -29,10 +29,11 @@ still storing data in Postgres.
 ## What it does
 
 1. Pick a team filter — Customer Support, Inbound Calls Team, or Both (default) — and
-   a date range (defaults to the last 90 days). These are the only two teams the
-   dropdown offers; team names are resolved to Intercom team ids at page load, so if
-   either team is renamed in Intercom this needs updating (`ALLOWED_TEAM_NAMES` in
-   `index.html`).
+   a date range (defaults to the last 90 days, or use the **Yesterday** / **Week to
+   Date** / **Month to Date** quick-select buttons — week starts Monday). These are
+   the only two teams the dropdown offers; team names are resolved to Intercom team
+   ids at page load, so if either team is renamed in Intercom this needs updating
+   (`ALLOWED_TEAM_NAMES` in `index.html`).
 2. Click **Sync from Intercom** to pull closed conversations for that range into
    Postgres. Re-running it for an overlapping range just updates existing rows
    (upsert on conversation id), so it's safe to re-sync.
@@ -50,6 +51,10 @@ response), regardless of which team the conversation itself belonged to. This ke
 out anyone from another team (Onboarding, Risk, Merchant Processing, etc.) whose
 close happened to get attributed to Customer Support or Inbound Calls Team. Runs
 client-side, checked at page load.
+
+**Clear Database**: wipes every row from `cs_leaderboard_conversations` (a
+`TRUNCATE`, so it's instant, but irreversible). Requires confirming a browser dialog
+first — "Are you sure you want to clear all the data in the database?"
 
 ## How stats are derived from Intercom
 

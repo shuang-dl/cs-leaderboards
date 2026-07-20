@@ -12,6 +12,7 @@
 //                                    gateway timeouts on wide date ranges)
 //   GET  /leaderboard-data           reads the leaderboard straight out of
 //                                    Postgres (aggregated via SQL)
+//   POST /clear-database             truncates all synced conversation data
 //
 // The API key never ships to the browser or the repo; the proxy route forwards
 // only to the allowlisted Intercom host.
@@ -31,6 +32,7 @@ const ALLOWED_HOST = 'api.intercom.io';
 const PROXY_ROUTE = '/proxy-standalone';
 const SYNC_ROUTE = '/sync-conversations';
 const LEADERBOARD_DATA_ROUTE = '/leaderboard-data';
+const CLEAR_DATABASE_ROUTE = '/clear-database';
 
 // Optional password gate. If BASIC_AUTH_PASSWORD is set, the whole site (page +
 // proxy) requires HTTP Basic Auth. Leave it unset to keep the deploy open.
@@ -256,6 +258,17 @@ async function handleLeaderboardData(req, res) {
   }
 }
 
+async function handleClearDatabase(req, res) {
+  try {
+    await db.clearAll();
+    console.log('Database cleared via /clear-database');
+    sendJSON(res, 200, { cleared: true });
+  } catch (err) {
+    console.error('Clear database failed:', err);
+    sendJSON(res, 500, { error: 'Clear database failed', message: err.message });
+  }
+}
+
 const server = http.createServer((req, res) => {
   if (!isAuthed(req)) {
     res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Restricted"' });
@@ -295,6 +308,11 @@ const server = http.createServer((req, res) => {
 
   if (parsed.pathname === LEADERBOARD_DATA_ROUTE && req.method === 'GET') {
     handleLeaderboardData(req, res);
+    return;
+  }
+
+  if (parsed.pathname === CLEAR_DATABASE_ROUTE && req.method === 'POST') {
+    handleClearDatabase(req, res);
     return;
   }
 
