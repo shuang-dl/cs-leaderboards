@@ -38,7 +38,8 @@ still storing data in Postgres.
    synced yet, it'll just show no data; sync it first.
 
 For each teammate: closed conversations, CSAT requested, CSAT received, CSAT response
-rate, average CSAT score.
+rate, average CSAT score, average first response time (FRT), average time to close
+(TTC). The summary cards show the same set aggregated across the whole team.
 
 ## How stats are derived from Intercom
 
@@ -54,6 +55,10 @@ rate, average CSAT score.
 - **Team filter**: uses `team_assignee_id` on the conversation (who the conversation
   belongs to), stored per row so filtering by team at leaderboard time doesn't require
   re-syncing.
+- **Avg FRT (first response time)**: average of `statistics.time_to_admin_reply`
+  (seconds from conversation start to the first admin reply).
+- **Avg TTC (time to close)**: average of `statistics.time_to_last_close` (seconds to
+  the same last-close event used for attribution above).
 
 ## Running it locally
 

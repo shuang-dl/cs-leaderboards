@@ -10,7 +10,7 @@
   header { padding: 20px 28px; border-bottom: 1px solid var(--border); }
   header h1 { margin: 0 0 4px; font-size: 18px; }
   header p { margin: 0; color: var(--muted); font-size: 13px; }
-  main { padding: 24px 28px; max-width: 1000px; margin: 0 auto; }
+  main { padding: 24px 28px; max-width: 1080px; margin: 0 auto; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
   .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
@@ -83,6 +83,8 @@
             <th class="num">CSAT Received</th>
             <th class="num">Response Rate</th>
             <th class="num">Avg CSAT</th>
+            <th class="num">Avg FRT</th>
+            <th class="num">Avg TTC</th>
           </tr>
         </thead>
         <tbody id="leaderboardBody"></tbody>
@@ -161,13 +163,32 @@ function formatAvg(value) {
   return value == null ? '—' : value.toFixed(2);
 }
 
+function formatDuration(seconds) {
+  if (seconds == null) return '—';
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins ? `${hours}h ${remMins}m` : `${hours}h`;
+}
+
+// Weighted average across agents, using each agent's own non-null count as the
+// weight (an agent's avg is meaningless without knowing how many values it covers).
+function weightedAvg(agents, avgKey, countKey) {
+  const totalCount = agents.reduce((sum, a) => sum + (a[countKey] || 0), 0);
+  if (totalCount === 0) return null;
+  const totalSum = agents.reduce((sum, a) => sum + (a[avgKey] != null ? a[avgKey] * a[countKey] : 0), 0);
+  return totalSum / totalCount;
+}
+
 function renderSummary(agents) {
   const totalClosed = agents.reduce((sum, a) => sum + a.closedConversations, 0);
   const totalRequested = agents.reduce((sum, a) => sum + a.csatRequested, 0);
   const totalReceived = agents.reduce((sum, a) => sum + a.csatReceived, 0);
-  const totalRatingSum = agents.reduce((sum, a) => sum + (a.avgCsat != null ? a.avgCsat * a.csatReceived : 0), 0);
-  const overallAvg = totalReceived > 0 ? totalRatingSum / totalReceived : null;
+  const overallAvg = weightedAvg(agents, 'avgCsat', 'csatReceived');
   const overallResponseRate = totalRequested > 0 ? totalReceived / totalRequested : null;
+  const overallFrt = weightedAvg(agents, 'avgFrtSeconds', 'frtCount');
+  const overallTtc = weightedAvg(agents, 'avgTtcSeconds', 'ttcCount');
 
   document.getElementById('cards').innerHTML = `
     <div class="card"><div class="num">${totalClosed}</div><div class="label">Closed Conversations</div></div>
@@ -175,6 +196,8 @@ function renderSummary(agents) {
     <div class="card"><div class="num">${totalReceived}</div><div class="label">CSAT Received</div></div>
     <div class="card"><div class="num">${formatPercent(overallResponseRate)}</div><div class="label">Response Rate</div></div>
     <div class="card"><div class="num">${formatAvg(overallAvg)}</div><div class="label">Avg CSAT</div></div>
+    <div class="card"><div class="num">${formatDuration(overallFrt)}</div><div class="label">Avg FRT</div></div>
+    <div class="card"><div class="num">${formatDuration(overallTtc)}</div><div class="label">Avg TTC</div></div>
   `;
   document.getElementById('summaryPanel').style.display = '';
 }
@@ -182,7 +205,7 @@ function renderSummary(agents) {
 function renderTable(agents) {
   const tbody = document.getElementById('leaderboardBody');
   if (!agents.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No closed conversations found for that range.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No closed conversations found for that range.</td></tr>';
   } else {
     tbody.innerHTML = agents.map(a => `
       <tr>
@@ -192,6 +215,8 @@ function renderTable(agents) {
         <td class="num">${a.csatReceived}</td>
         <td class="num">${formatPercent(a.csatResponseRate)}</td>
         <td class="num">${formatAvg(a.avgCsat)}</td>
+        <td class="num">${formatDuration(a.avgFrtSeconds)}</td>
+        <td class="num">${formatDuration(a.avgTtcSeconds)}</td>
       </tr>
     `).join('');
   }

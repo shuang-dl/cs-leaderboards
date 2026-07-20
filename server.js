@@ -152,8 +152,9 @@ async function fetchClosedConversationsPage(startUnix, endUnix, startingAfter, a
 }
 
 function toRow(convo) {
-  const closedByAdminId = convo.statistics && convo.statistics.last_closed_by_id;
-  const lastCloseAtUnix = convo.statistics && convo.statistics.last_close_at;
+  const stats = convo.statistics;
+  const closedByAdminId = stats && stats.last_closed_by_id;
+  const lastCloseAtUnix = stats && stats.last_close_at;
   if (!closedByAdminId || !lastCloseAtUnix) return null;
 
   const rating = convo.conversation_rating;
@@ -165,6 +166,10 @@ function toRow(convo) {
     csatRequested: Boolean(rating),
     csatReceived: Boolean(rating && rating.rating != null),
     csatRating: rating && rating.rating != null ? rating.rating : null,
+    // FRT: time to the first admin reply. TTC: time to the last close — paired
+    // with last_closed_by_id above, so it matches who/what we're attributing to.
+    frtSeconds: stats.time_to_admin_reply != null ? stats.time_to_admin_reply : null,
+    ttcSeconds: stats.time_to_last_close != null ? stats.time_to_last_close : null,
   };
 }
 

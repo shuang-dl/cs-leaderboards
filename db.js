@@ -15,8 +15,12 @@ const SCHEMA = `
     csat_requested BOOLEAN NOT NULL DEFAULT false,
     csat_received BOOLEAN NOT NULL DEFAULT false,
     csat_rating SMALLINT,
+    frt_seconds INTEGER,
+    ttc_seconds INTEGER,
     synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+  ALTER TABLE cs_leaderboard_conversations ADD COLUMN IF NOT EXISTS frt_seconds INTEGER;
+  ALTER TABLE cs_leaderboard_conversations ADD COLUMN IF NOT EXISTS ttc_seconds INTEGER;
   CREATE INDEX IF NOT EXISTS idx_cslb_last_close_at ON cs_leaderboard_conversations (last_close_at);
   CREATE INDEX IF NOT EXISTS idx_cslb_team_id ON cs_leaderboard_conversations (team_id);
 `;
@@ -36,8 +40,8 @@ async function upsertConversations(rows) {
     for (const row of rows) {
       await client.query(
         `INSERT INTO cs_leaderboard_conversations
-           (conversation_id, closed_by_admin_id, team_id, last_close_at, csat_requested, csat_received, csat_rating, synced_at)
-         VALUES ($1, $2, $3, to_timestamp($4), $5, $6, $7, now())
+           (conversation_id, closed_by_admin_id, team_id, last_close_at, csat_requested, csat_received, csat_rating, frt_seconds, ttc_seconds, synced_at)
+         VALUES ($1, $2, $3, to_timestamp($4), $5, $6, $7, $8, $9, now())
          ON CONFLICT (conversation_id) DO UPDATE SET
            closed_by_admin_id = EXCLUDED.closed_by_admin_id,
            team_id = EXCLUDED.team_id,
@@ -45,6 +49,8 @@ async function upsertConversations(rows) {
            csat_requested = EXCLUDED.csat_requested,
            csat_received = EXCLUDED.csat_received,
            csat_rating = EXCLUDED.csat_rating,
+           frt_seconds = EXCLUDED.frt_seconds,
+           ttc_seconds = EXCLUDED.ttc_seconds,
            synced_at = now()`,
         [
           row.conversationId,
@@ -54,6 +60,8 @@ async function upsertConversations(rows) {
           row.csatRequested,
           row.csatReceived,
           row.csatRating,
+          row.frtSeconds,
+          row.ttcSeconds,
         ]
       );
     }
@@ -76,7 +84,11 @@ async function queryLeaderboard({ startUnix, endUnix, teamId }) {
        COUNT(*)::int AS closed_conversations,
        COUNT(*) FILTER (WHERE csat_requested)::int AS csat_requested,
        COUNT(*) FILTER (WHERE csat_received)::int AS csat_received,
-       AVG(csat_rating) FILTER (WHERE csat_received) AS avg_csat
+       AVG(csat_rating) FILTER (WHERE csat_received) AS avg_csat,
+       AVG(frt_seconds) AS avg_frt_seconds,
+       COUNT(frt_seconds)::int AS frt_count,
+       AVG(ttc_seconds) AS avg_ttc_seconds,
+       COUNT(ttc_seconds)::int AS ttc_count
      FROM cs_leaderboard_conversations
      WHERE last_close_at >= to_timestamp($1)
        AND last_close_at <= to_timestamp($2)
@@ -93,6 +105,10 @@ async function queryLeaderboard({ startUnix, endUnix, teamId }) {
     csatReceived: r.csat_received,
     csatResponseRate: r.csat_requested > 0 ? r.csat_received / r.csat_requested : null,
     avgCsat: r.avg_csat != null ? Number(r.avg_csat) : null,
+    avgFrtSeconds: r.avg_frt_seconds != null ? Number(r.avg_frt_seconds) : null,
+    frtCount: r.frt_count,
+    avgTtcSeconds: r.avg_ttc_seconds != null ? Number(r.avg_ttc_seconds) : null,
+    ttcCount: r.ttc_count,
   }));
 }
 
