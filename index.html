@@ -28,8 +28,14 @@
   button:disabled { opacity: .5; cursor: default; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.danger { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
-  #status, #syncStatus, #clearDbStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  #status, #syncStatus, #clearDbStatus { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 18px; display: flex; align-items: center; gap: 8px; }
   #status.err, #syncStatus.err, #clearDbStatus.err { color: var(--bad); }
+  .spinner {
+    width: 13px; height: 13px; flex: none;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .card { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
   .card .num { font-size: 26px; font-weight: 700; }
@@ -300,9 +306,9 @@ function renderTable(agents) {
   document.getElementById('tablePanel').style.display = '';
 }
 
-function setSyncStatus(msg, isErr) {
+function setSyncStatus(msg, { isErr = false, loading = false } = {}) {
   const el = document.getElementById('syncStatus');
-  el.textContent = msg || '';
+  el.innerHTML = (loading ? '<span class="spinner"></span>' : '') + `<span>${msg || ''}</span>`;
   el.className = isErr ? 'err' : '';
 }
 
@@ -312,12 +318,12 @@ function syncFromIntercom() {
   const start = document.getElementById('startDate').value;
   const end = document.getElementById('endDate').value;
 
-  setSyncStatus(`Syncing ${start} to ${end} from Intercom…`);
+  setSyncStatus(`Syncing ${start} to ${end} from Intercom…`, { loading: true });
   const source = new EventSource(`/sync-conversations?start=${start}&end=${end}`);
 
   source.addEventListener('progress', (e) => {
     const p = JSON.parse(e.data);
-    setSyncStatus(`Syncing… ${p.fetched} fetched, ${p.synced} synced so far.`);
+    setSyncStatus(`Syncing… ${p.fetched} fetched, ${p.synced} synced so far.`, { loading: true });
   });
 
   source.addEventListener('done', (e) => {
@@ -331,7 +337,7 @@ function syncFromIntercom() {
     // Distinguish our own named "error" event (has e.data) from the browser's
     // generic connection-error event (fired e.g. if the stream never opens).
     const message = e.data ? JSON.parse(e.data).message : 'Connection to the server was lost';
-    setSyncStatus(`Error: ${message}`, true);
+    setSyncStatus(`Error: ${message}`, { isErr: true });
     source.close();
     syncBtn.disabled = false;
   });
