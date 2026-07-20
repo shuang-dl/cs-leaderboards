@@ -13,6 +13,13 @@
   main { padding: 24px 28px; max-width: 1080px; margin: 0 auto; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
   .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; }
+  .panel-header h2 { margin: 0; }
+  .icon-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 4px 10px; font-size: 13px; line-height: 1; }
+  .panel.fullscreen {
+    position: fixed; inset: 0; z-index: 1000; margin: 0; max-width: none;
+    border-radius: 0; overflow-y: auto; padding: 24px 28px;
+  }
   .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   input[type="date"], select { background: #0f1115; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
@@ -72,7 +79,11 @@
   </div>
 
   <div class="panel" id="tablePanel" style="display:none;">
-    <h2>By teammate</h2>
+    <div class="panel-header">
+      <h2>By teammate</h2>
+      <button id="expandBtn" class="icon-btn" type="button" title="Expand to full screen">⛶</button>
+      <button id="collapseBtn" class="icon-btn" type="button" title="Exit full screen" style="display:none;">✕</button>
+    </div>
     <div style="overflow-x:auto;">
       <table id="leaderboardTable">
         <thead>
@@ -329,7 +340,18 @@ async function init() {
   }
 }
 
+function setTableFullscreen(fullscreen) {
+  document.getElementById('tablePanel').classList.toggle('fullscreen', fullscreen);
+  document.getElementById('expandBtn').style.display = fullscreen ? 'none' : '';
+  document.getElementById('collapseBtn').style.display = fullscreen ? '' : 'none';
+}
+
 document.getElementById('runBtn').addEventListener('click', runReport);
 document.getElementById('syncBtn').addEventListener('click', syncFromIntercom);
+document.getElementById('expandBtn').addEventListener('click', () => setTableFullscreen(true));
+document.getElementById('collapseBtn').addEventListener('click', () => setTableFullscreen(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') setTableFullscreen(false);
+});
 init();
 </script>
