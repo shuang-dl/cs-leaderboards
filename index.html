@@ -64,6 +64,7 @@
         <label>Quick select</label>
         <select id="quickSelect">
           <option value="">Quick select…</option>
+          <option value="today">Today</option>
           <option value="yesterday">Yesterday</option>
           <option value="wtd">Week to Date</option>
           <option value="mtd">Month to Date</option>
@@ -219,7 +220,9 @@ function setQuickRange(range) {
   const today = new Date();
   let start, end;
 
-  if (range === 'yesterday') {
+  if (range === 'today') {
+    start = end = today;
+  } else if (range === 'yesterday') {
     start = end = new Date(today.getTime() - 86400000);
   } else if (range === 'wtd') {
     // Week starts Monday.
