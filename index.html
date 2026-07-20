@@ -98,14 +98,13 @@ const API_VERSION = '2.11';
 const PROXY_URL = `${window.location.origin}/proxy-standalone?url=`;
 // The leaderboard is scoped to just these two teams — resolved to Intercom team
 // ids at load time (names must match exactly what's configured in Intercom).
+// An agent only appears in results if they're a member of one of these teams
+// (via Intercom's admin_ids on the team), regardless of which team a given
+// conversation itself belonged to — this keeps out anyone from another team
+// whose close happened to get attributed here.
 const ALLOWED_TEAM_NAMES = ['Customer Support', 'Inbound Calls Team'];
 
-// Agents who are also members of any of these teams are excluded from the
-// leaderboard entirely (e.g. someone on both Customer Support and Risk shouldn't
-// show up here), regardless of which team a given conversation belonged to.
-const EXCLUDED_TEAM_NAMES = ['Onboarding Team', 'Merchant Processing', 'Risk'];
-
-const state = { admins: new Map(), teams: [], excludedAdminIds: new Set() };
+const state = { admins: new Map(), teams: [] };
 
 function setStatus(msg, isErr) {
   const el = document.getElementById('status');
@@ -153,12 +152,8 @@ async function loadTeams() {
   }));
 
   state.teams = ALLOWED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
-  const excludedTeams = EXCLUDED_TEAM_NAMES.map(name => allTeams.find(t => t.name === name)).filter(Boolean);
-  state.excludedAdminIds = new Set(excludedTeams.flatMap(t => t.adminIds));
 
-  const missingAllowed = ALLOWED_TEAM_NAMES.filter(name => !state.teams.some(t => t.name === name));
-  const missingExcluded = EXCLUDED_TEAM_NAMES.filter(name => !excludedTeams.some(t => t.name === name));
-  const missing = [...missingAllowed, ...missingExcluded];
+  const missing = ALLOWED_TEAM_NAMES.filter(name => !state.teams.some(t => t.name === name));
   if (missing.length) setStatus(`Warning: could not find team(s) in Intercom: ${missing.join(', ')}`, true);
 
   const sel = document.getElementById('teamSelect');
@@ -292,6 +287,10 @@ async function runReport() {
     const start = document.getElementById('startDate').value;
     const end = document.getElementById('endDate').value;
     const teamId = document.getElementById('teamSelect').value;
+    const selectedIds = new Set(teamId.split(','));
+    const allowedAdminIds = new Set(
+      state.teams.filter(t => selectedIds.has(t.id)).flatMap(t => t.adminIds)
+    );
 
     setStatus('Reading leaderboard from the database…');
     const qs = new URLSearchParams({ start, end, ...(teamId ? { team: teamId } : {}) });
@@ -299,7 +298,7 @@ async function runReport() {
     if (data.error) throw new Error(data.error);
 
     const agents = data.agents
-      .filter(a => !state.excludedAdminIds.has(a.adminId))
+      .filter(a => allowedAdminIds.has(a.adminId))
       .map(a => ({
         ...a,
         name: state.admins.get(a.adminId) || `Admin ${a.adminId}`,
